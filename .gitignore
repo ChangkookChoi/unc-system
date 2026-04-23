@@ -205,3 +205,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Python venv
+backend/venv/
+
+# 환경변수
+.env
+.env.local
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+
