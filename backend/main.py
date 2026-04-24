@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from routes.webhook import router as webhook_router
 from routes.reports import router as reports_router
 from database import get_pool, close_pool
+import scheduler as sch
 
 load_dotenv()
 
@@ -13,10 +14,10 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await get_pool()
-    # scheduler.start()  # scheduler.py 구현 후 활성화
+    sch.start()
     yield
+    sch.shutdown()
     await close_pool()
-    # scheduler.shutdown()
 
 
 app = FastAPI(title="unc-system", lifespan=lifespan)
