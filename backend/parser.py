@@ -135,10 +135,16 @@ def _parse_task_line(line: str, report_type: str) -> TaskItem | None:
     )
 
 
-def parse_message(text: str, year: int | None = None) -> ParseResult | None:
+def parse_message(
+    text: str,
+    member_name: str | None = None,  # Webhook payload의 실제 유저명 (우선 사용)
+    year: int | None = None,
+) -> ParseResult | None:
     """
     단일 메시지 본문을 파싱한다.
-    Webhook에서 받은 메시지 본문 또는 테스트 텍스트 모두 처리 가능.
+
+    - Webhook 경로: member_name에 채널톡 실제 유저명을 전달 → 텍스트 내 작성 이름 무시
+    - 테스트 경로: member_name 생략 → 텍스트에서 이름 추출 (sample_messages.txt 검증용)
     """
     lines = [l.rstrip() for l in text.splitlines()]
     y = year or date.today().year
@@ -146,7 +152,7 @@ def parse_message(text: str, year: int | None = None) -> ParseResult | None:
     # 제목 줄 탐색
     title_idx = -1
     report_date: date | None = None
-    member_name = ''
+    parsed_member = ''
     report_type = ''
 
     for i, line in enumerate(lines):
@@ -159,7 +165,8 @@ def parse_message(text: str, year: int | None = None) -> ParseResult | None:
                 report_date = date(y, int(month), int(day))
             except ValueError:
                 continue
-            member_name = normalize_member(member_raw)
+            # Webhook에서 실제 유저명이 주어지면 텍스트 내 이름은 무시
+            parsed_member = member_name if member_name else normalize_member(member_raw)
             report_type = 'plan' if '계획' in rtype_raw else 'report'
             title_idx = i
             break
@@ -175,6 +182,8 @@ def parse_message(text: str, year: int | None = None) -> ParseResult | None:
         task = _parse_task_line(line, report_type)
         if task:
             tasks.append(task)
+
+    member_name = parsed_member
 
     if not tasks:
         return None
