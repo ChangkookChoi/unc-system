@@ -43,12 +43,12 @@ unc-system 개발 태스크 목록.
   - Google Docs/Notion URL, 삭제 메시지 등 무시 처리
 - [x] `backend/test_parser.py` + `sample_messages.txt` — 실데이터 검증 (208건, 92% 성공)
 
-### 1-5. 스케줄러 🔜 다음 작업
+### 1-5. 스케줄러 ✅
 
-- [ ] `backend/scheduler.py` — APScheduler 설정 (타임존: Asia/Seoul)
-  - 09:00 잡: 아침 리마인더 발송
-  - 23:00 잡: 당일 리포트 집계 → 팀챗 고지
-- [ ] `main.py` lifespan에 scheduler.start() / shutdown() 연결
+- [x] `backend/scheduler.py` — AsyncIOScheduler, Asia/Seoul
+  - 09:00 morning_reminder 잡
+  - 23:00 evening_summary 잡
+- [x] `main.py` lifespan에 연결
 
 ---
 
@@ -57,13 +57,13 @@ unc-system 개발 태스크 목록.
 **목표:** 다양한 완료 표기 대응, 카테고리 매핑, 집계 데이터 축적  
 **완료 기준:** 표기법을 정확히 파싱하고 집계 데이터가 DB에 쌓임
 
-### 2-1. 하이브리드 파서 (Claude API 폴백)
+### 2-1. 하이브리드 파서 (Claude API 폴백) ✅
 
-- [ ] `backend/parser.py` — Claude Haiku 폴백 추가
-  - 신뢰도 < 0.5 이면 Claude API 호출
-  - EEEE/Natae "표기 없음 = 완료" 패턴 처리
-  - 모델: `claude-haiku-4-5` (건당 약 $0.0001)
-- [ ] Claude API 호출 로깅 (비용 추적용)
+- [x] `backend/parser.py` — parse_message_with_fallback() 구현
+  - 신뢰도 < 0.5 → Claude Haiku API 호출
+  - EEEE/Natae "표기 없음 = 완료" 처리
+  - 입출력 토큰 로깅 (비용 추적)
+  - 크레딧 충전 후 즉시 활성화됨
 
 ### 2-2. 태스크 카테고리 매핑
 
@@ -75,21 +75,15 @@ unc-system 개발 태스크 목록.
   - `python cli.py map "러닝" "운동"`
   - `python cli.py list-unmapped`
 
-### 2-3. 집계 엔진
+### 2-3. 집계 엔진 ✅
 
-- [ ] `backend/aggregator.py`
-  - 멤버별 일일 달성률 (완료 수 / 전체 태스크 수)
-  - 스트릭 계산 (연속 달성일, 태스크별 + 멤버별)
-  - 팀 평균 달성률 / 미제출 멤버 감지
-- [ ] `backend/routes/reports.py` 실제 구현
-  - `GET /reports/daily?date=`
-  - `GET /reports/weekly?week=`
-  - `GET /reports/members/{member_id}/streak`
+- [x] `backend/aggregator.py` — save_parse_result, get_daily_report, get_weekly_report, get_member_streak, get_category_stats
+- [x] `backend/routes/reports.py` — GET /reports/daily|weekly|categories, /members/{id}/streak
 
-### 2-4. 저녁 집계 메시지 고도화
+### 2-4. 저녁 집계 메시지 고도화 ✅
 
-- [ ] 스트릭 강조 표시 (`🔥 듀오링고 영어: 팀 전원 7일 연속 달성 중!`)
-- [ ] 오늘 최다 달성 멤버 / 미제출 멤버 별도 표기
+- [x] `backend/notifier.py` — build_evening_summary(), build_morning_reminder()
+  - 달성률 아이콘(✅🔶❌), MVP, 스트릭 강조, 미제출 독려
 
 ---
 

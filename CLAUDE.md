@@ -21,7 +21,9 @@
 | 1-2. DB 세팅 (Supabase + asyncpg) | ✅ 완료 |
 | 1-3. 채널톡 Webhook 연동 | ⏸ 대기 (관리자 권한 확보 후 진행) |
 | 1-4. 규칙 기반 파서 | ✅ 완료 |
-| 1-5. APScheduler 리마인더 | 🔜 다음 작업 |
+| 1-5. APScheduler 리마인더 | ✅ 완료 |
+
+**Phase 2 진행 중** — Claude 폴백(크레딧 충전 후 활성화), 채널톡 연동(1-3) 대기 중
 
 상세 태스크: `TODO.md` 참고
 
@@ -33,10 +35,15 @@ unc-system/
 │   ├── main.py          FastAPI 앱 진입점 (lifespan, CORS, 라우터)
 │   ├── database.py      asyncpg 커넥션 풀
 │   ├── models.py        Pydantic 모델 (WebhookPayload, ParseResult, DailyReport)
-│   ├── parser.py        규칙 기반 메시지 파서
+│   ├── parser.py        규칙 기반 파서 + Claude API 폴백 (parse_message_with_fallback)
+│   ├── aggregator.py    DB 저장 + 집계 쿼리 (일간/주간/스트릭/카테고리)
+│   ├── notifier.py      저녁 집계 / 아침 리마인더 메시지 포맷터
+│   ├── scheduler.py     APScheduler (09:00/23:00, Asia/Seoul)
+│   ├── categorizer.py   태스크 → 카테고리 매핑 (정확/유사도/분리)
+│   ├── cli.py           어드민 CLI (map/list-unmapped/show-mappings/check)
 │   ├── routes/
-│   │   ├── webhook.py   POST /webhook (스텁)
-│   │   └── reports.py   GET /reports/daily (스텁)
+│   │   ├── webhook.py   POST /webhook
+│   │   └── reports.py   GET /reports/daily|weekly|categories, /members/{id}/streak
 │   └── migrations/
 │       └── 001_init.sql 초기 스키마
 └── frontend/            Next.js 대시보드 (Phase 3에서 본격 개발)
