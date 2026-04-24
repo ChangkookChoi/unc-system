@@ -174,9 +174,11 @@ def parse_message(
     if title_idx < 0 or report_date is None:
         return None
 
-    # 태스크 파싱
+    # 태스크 파싱 — 다음 제목 블록 만나면 중단 (멀티 블록 방어)
     tasks: list[TaskItem] = []
     for line in lines[title_idx + 1:]:
+        if TITLE_RE.match(line.strip()):
+            break
         if SKIP_LINE_RE.search(line.strip()):
             continue
         task = _parse_task_line(line, report_type)
@@ -203,3 +205,17 @@ def parse_message(
         confidence=confidence,
         used_claude=False,
     )
+
+
+def detect_multi_block(text: str) -> bool:
+    """한 메시지에 날짜가 다른 내용이 2개 이상 있는지 감지한다."""
+    # MULTILINE 플래그로 각 줄 시작에서 매칭
+    titles = re.findall(
+        r'^(\d{2})\.\s*(\d{2})\s+\S+\s+업무\s*(?:계획|보고)',
+        text, re.MULTILINE,
+    )
+    if len(titles) < 2:
+        return False
+    # 날짜(월.일)가 실제로 다른 경우만 멀티 블록으로 판정
+    dates = {(m[0], m[1]) for m in titles}
+    return len(dates) > 1
