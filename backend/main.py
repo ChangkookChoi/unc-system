@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,9 +23,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="unc-system", lifespan=lifespan)
 
+_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[o.strip() for o in _origins],
     allow_methods=["*"],
     allow_headers=["*"],
 )

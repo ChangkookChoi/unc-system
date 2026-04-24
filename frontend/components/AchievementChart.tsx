@@ -32,7 +32,7 @@ export default function AchievementChart({ members }: AchievementChartProps) {
         <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
         <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} unit="%" />
-        <Tooltip formatter={(v: number) => `${v}%`} />
+        <Tooltip formatter={(v) => [`${v}%`]} />
         <Bar dataKey="rate" radius={[4, 4, 0, 0]}>
           {data.map((entry) => (
             <Cell
