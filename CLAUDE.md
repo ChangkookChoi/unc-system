@@ -13,40 +13,59 @@
 
 ## 현재 개발 단계
 
-**Phase 1 진행 중** — 채널톡 연동(1-3) 대기 중, 스케줄러(1-5) 다음 예정
-
 | 단계 | 상태 |
 |------|------|
-| 1-1. 프로젝트 초기 세팅 | ✅ 완료 |
-| 1-2. DB 세팅 (Supabase + asyncpg) | ✅ 완료 |
+| 1-1. 프로젝트 초기 세팅 | ✅ |
+| 1-2. DB 세팅 (Supabase + asyncpg) | ✅ |
 | 1-3. 채널톡 Webhook 연동 | ⏸ 대기 (관리자 권한 확보 후 진행) |
-| 1-4. 규칙 기반 파서 | ✅ 완료 |
-| 1-5. APScheduler 리마인더 | ✅ 완료 |
+| 1-4. 규칙 기반 파서 | ✅ |
+| 1-5. APScheduler 리마인더 | ✅ |
+| 2-1. Claude API 폴백 파서 | ✅ (Anthropic 크레딧 충전 후 활성화) |
+| 2-2. 카테고리 매핑 + CLI | ✅ |
+| 2-3. 집계 엔진 + reports API | ✅ |
+| 2-4. 저녁 집계 메시지 포맷터 | ✅ |
+| 3-1~3. 대시보드 (일간/주간 뷰) | ✅ |
+| 배포 — Fly.io (백엔드) | 🔧 진행 중 (DB 연결 문제 해결 중) |
+| 배포 — Vercel (프론트엔드) | 🔜 백엔드 배포 완료 후 진행 |
 
-**Phase 2 진행 중** — Claude 폴백(크레딧 충전 후 활성화), 채널톡 연동(1-3) 대기 중
-
-상세 태스크: `TODO.md` 참고
+상세 태스크: `TODO.md` / 결정 기록: `DECISIONS.md`
 
 ## 프로젝트 구조
 
 ```
 unc-system/
 ├── backend/
-│   ├── main.py          FastAPI 앱 진입점 (lifespan, CORS, 라우터)
-│   ├── database.py      asyncpg 커넥션 풀
-│   ├── models.py        Pydantic 모델 (WebhookPayload, ParseResult, DailyReport)
-│   ├── parser.py        규칙 기반 파서 + Claude API 폴백 (parse_message_with_fallback)
-│   ├── aggregator.py    DB 저장 + 집계 쿼리 (일간/주간/스트릭/카테고리)
-│   ├── notifier.py      저녁 집계 / 아침 리마인더 메시지 포맷터
-│   ├── scheduler.py     APScheduler (09:00/23:00, Asia/Seoul)
-│   ├── categorizer.py   태스크 → 카테고리 매핑 (정확/유사도/분리)
-│   ├── cli.py           어드민 CLI (map/list-unmapped/show-mappings/check)
+│   ├── main.py            FastAPI 앱 (lifespan, CORS, 라우터)
+│   ├── database.py        asyncpg 커넥션 풀 (Supabase SSL 지원)
+│   ├── models.py          Pydantic 모델
+│   ├── parser.py          규칙 기반 파서 + Claude API 폴백
+│   ├── aggregator.py      DB 저장 + 집계 쿼리
+│   ├── notifier.py        저녁 집계 / 아침 리마인더 메시지 포맷터
+│   ├── scheduler.py       APScheduler (09:00/23:00, Asia/Seoul)
+│   ├── categorizer.py     태스크 → 카테고리 매핑
+│   ├── cli.py             어드민 CLI
+│   ├── Dockerfile         Fly.io 배포용
+│   ├── fly.toml           Fly.io 설정 (앱명: unc-system-api, 리전: nrt)
 │   ├── routes/
-│   │   ├── webhook.py   POST /webhook
-│   │   └── reports.py   GET /reports/daily|weekly|categories, /members/{id}/streak
+│   │   ├── webhook.py     POST /webhook
+│   │   └── reports.py     GET /reports/daily|weekly|categories, /members/{id}/streak
 │   └── migrations/
-│       └── 001_init.sql 초기 스키마
-└── frontend/            Next.js 대시보드 (Phase 3에서 본격 개발)
+│       ├── 001_init.sql   초기 스키마
+│       ├── 002_category_mappings.sql  카테고리 매핑 테이블 + 143개 초기 데이터
+│       └── 003_constraints.sql        유니크 제약 + is_comment 컬럼
+└── frontend/
+    ├── app/
+    │   ├── page.tsx       대시보드 메인 (Server Component, 일간/주간 뷰)
+    │   └── layout.tsx
+    ├── components/
+    │   ├── StatCard.tsx
+    │   ├── MemberCard.tsx
+    │   ├── AchievementChart.tsx  ('use client', Recharts)
+    │   ├── WeeklyChart.tsx       ('use client', Recharts)
+    │   ├── TaskTable.tsx
+    │   └── DateNav.tsx           ('use client', URL searchParams 기반 날짜 이동)
+    ├── lib/api.ts         FastAPI 백엔드 API 클라이언트
+    └── types/index.ts     공통 TypeScript 타입
 ```
 
 ## 기술 스택
@@ -54,52 +73,68 @@ unc-system/
 | 영역 | 기술 |
 |------|------|
 | 백엔드 | Python 3.13 + FastAPI + uvicorn |
-| DB 연결 | asyncpg (커넥션 풀) |
-| DB | PostgreSQL (Supabase) |
-| 스케줄러 | APScheduler |
-| AI 파싱 폴백 | Anthropic Claude API — Haiku 모델 |
+| DB 연결 | asyncpg (커넥션 풀, Supabase 풀러 Session mode) |
+| DB | PostgreSQL (Supabase, 서울 리전) |
+| 스케줄러 | APScheduler (Asia/Seoul) |
+| AI 파싱 폴백 | Anthropic Claude Haiku 4.5 |
 | 대시보드 | Next.js 16.2.4 + React 19 + TypeScript + Tailwind CSS 4 |
-| 차트 | Recharts (Phase 3에서 설치 예정) |
-| 채널 연동 | 채널톡 Open API v5 |
+| 차트 | Recharts |
+| 채널 연동 | 채널톡 Open API v5 (연동 대기 중) |
+| 백엔드 배포 | Fly.io (앱명: unc-system-api, 리전: nrt 도쿄) |
+| 프론트 배포 | Vercel (예정) |
 
 ## 핵심 설계 원칙
 
-1. **원본 데이터 보존** — 멤버가 입력한 태스크명을 덮어쓰지 않는다. 카테고리 매핑은 별도 테이블로 관리하고 집계 시에만 사용한다.
+1. **원본 데이터 보존** — 태스크명 덮어쓰지 않음. 카테고리 매핑은 별도 테이블, 집계 시에만 사용.
+2. **파싱 우선순위** — 규칙 기반 먼저, 신뢰도 < 0.5일 때만 Claude API 폴백.
+3. **채널톡 주의사항** — `actAsManager` 옵션은 팀챗에서 422 에러. 사용 금지.
+4. **환경변수 하드코딩 금지** — `.env` 파일 / Fly.io secrets로만 관리.
 
-2. **파싱 우선순위** — 규칙 기반 파서 먼저, 신뢰도 < 0.5일 때만 Claude API 폴백. Claude API는 기본이 아닌 폴백이다.
+## Fly.io 배포 관련
 
-3. **채널톡 Webhook 주의사항** — `actAsManager` 옵션은 팀챗에서 422 에러. 사용 금지.
+- **앱명:** `unc-system-api`
+- **리전:** `nrt` (도쿄)
+- **DB 연결:** Supabase 직접 연결(5432)은 IPv6 문제로 차단 → **Session 풀러** 사용
+  - 풀러 호스트: `aws-1-ap-northeast-2.pooler.supabase.com:5432`
+  - 유저명 형식: `postgres.sbotiiispplrdwfzofgb` (프로젝트 ID 포함)
+- **Fly.io secrets:** `DATABASE_URL`, `ANTHROPIC_API_KEY`, `ALLOWED_ORIGINS`
+- **머신:** 1대 (shared-cpu-1x, 256MB, min_machines_running=1 → 슬립 없음)
 
-4. **환경변수 하드코딩 금지** — 모든 키/시크릿은 `.env` 파일에서만 관리.
-
-## 메시지 포맷 및 완료 표기
-
-**제목 패턴:** `MM.DD 이름 업무계획` / `MM.DD 이름 업무보고`
-
-**멤버별 완료 표기 (실제 데이터 기반):**
+## 멤버별 완료 표기 (파서 참고)
 
 | 멤버 | 완료 | 미완료 | 특이사항 |
 |------|------|--------|---------|
-| Charco (차르코) | `O` | `X`, `ing` | `- ing`, `- 자료 수집 중` = 미완료 |
-| HYOM | `ㅇ` | `x`, `세모` | `세모` = 부분완료 → 미완료 처리 |
+| Charco (차르코) | `O` | `X`, `ing` | |
+| HYOM | `ㅇ` | `x`, `세모` | 세모 = 부분완료 → 미완료 처리 |
 | PK-B (피카부) | `ㅇ`, `o` | `X`, `x` | |
-| EEEE | 표기 없음 | `(미완료)` | 표기 없음 = 완료 → 신뢰도 0% → Claude 폴백 |
-| 무지 | `(o)`, `(완)`, 수치`(12m)`, 진행률`(95/443)` | `(x)` | Notion 링크로만 보고하는 경우 있음 |
-| Natae | 표기 없음 | | EEEE와 동일한 패턴 |
-
-**파싱에서 무시:** Google Docs/Notion URL, `삭제된 메시지입니다.`, `(수정됨)`, 날짜 헤더
+| EEEE | 표기 없음 | `(미완료)` | 신뢰도 0% → Claude 폴백 |
+| 무지 | `(o)`, `(완)`, 수치 | `(x)` | Notion 링크 보고 시 파싱 불가 |
+| Natae | 표기 없음 | | EEEE와 동일 패턴 |
 
 ## 개발 명령어
 
 ```bash
-# 백엔드 실행
+# 백엔드 로컬 실행
 cd backend && source venv/bin/activate && uvicorn main:app --reload --port 8000
 
 # 파서 테스트
 cd backend && source venv/bin/activate && python test_parser.py
 
-# 프론트엔드 실행
+# 카테고리 CLI
+cd backend && source venv/bin/activate && python cli.py check "러닝"
+cd backend && source venv/bin/activate && python cli.py map "새태스크" "운동"
+
+# 프론트엔드 로컬 실행
 cd frontend && npm run dev
+
+# Fly.io 배포
+cd backend && flyctl deploy --app unc-system-api
+
+# Fly.io 로그 확인
+flyctl logs --app unc-system-api
+
+# Fly.io secrets 설정
+flyctl secrets set KEY="value" --app unc-system-api
 
 # 백엔드 패키지 추가
 cd backend && source venv/bin/activate && pip install {패키지명} && pip freeze > requirements.txt
@@ -116,6 +151,8 @@ cd backend && source venv/bin/activate && pip install {패키지명} && pip free
 
 - 전체 기획: `README.md`
 - 개발 태스크: `TODO.md`
-- 주요 결정 기록: `DECISIONS.md`
+- 결정 기록: `DECISIONS.md`
+- 운영 규칙: `RULES.md`
 - 채널톡 API: https://developers.channel.io
 - Anthropic API: https://docs.anthropic.com
+- Fly.io 대시보드: https://fly.io/apps/unc-system-api

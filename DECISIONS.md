@@ -82,3 +82,31 @@
 **결정:** 날짜가 다른 내용은 반드시 별도 메시지로 분리 전송 (운영 규칙). 어기는 경우 서버는 첫 번째 블록만 처리하고 채널톡으로 안내 메시지 발송.  
 **이유:** 멀티 블록 파싱은 "늦은 보고"와 "두 날치 동시 전송"을 구분할 수 없어 데이터 오염 위험. 서버가 뻗지 않도록 예외처리하되, 봇이 규칙 안내를 자동으로 해줌으로써 자연스럽게 교정.  
 **운영 규칙 반영:** `RULES.md` §3 참고.
+
+---
+
+## 2026-04-24 (3)
+
+### 백엔드 배포 플랫폼 — Railway → Fly.io 변경
+
+**결정:** Railway 대신 Fly.io 사용  
+**이유:** Railway는 첫달만 $5 무료, 이후 $1/월로 사실상 유료. Fly.io는 소형 VM 3개 영구 무료 + 슬립 없음. APScheduler가 상시 실행 중인 프로세스를 필요로 하므로 슬립 없는 플랫폼 필수.  
+**설정:** 앱명 `unc-system-api`, 리전 `nrt` (도쿄, 한국에서 가장 가까운 리전), 머신 1대 (shared-cpu-1x, 256MB), `min_machines_running=1`로 슬립 방지.
+
+---
+
+### Supabase 연결 방식 — 직접 연결 → 연결 풀러(Session mode)로 변경
+
+**결정:** `db.sbotiiispplrdwfzofgb.supabase.co:5432` → `aws-1-ap-northeast-2.pooler.supabase.com:5432` (Session mode)  
+**이유:** Fly.io 머신은 기본적으로 IPv6로 외부에 연결. Supabase 직접 연결(5432)은 Fly.io의 IPv6 주소를 차단 (`ConnectionRefusedError: [Errno 111]`). Supabase 연결 풀러(Supavisor)는 IPv4로 동작해 차단 없음.  
+**Transaction mode가 아닌 Session mode를 선택한 이유:** asyncpg가 기본적으로 prepared statement를 캐싱하는데, Transaction mode는 이를 지원하지 않아 코드 수정 없이 바로 호환되는 Session mode 선택.  
+**유저명 주의:** 풀러 연결 시 유저명이 `postgres`가 아닌 `postgres.sbotiiispplrdwfzofgb` (프로젝트 ID 포함).
+
+---
+
+### Supabase 인증 실패 과다 → Circuit Breaker 발동
+
+**상황:** 잘못된 DATABASE_URL(비밀번호에 터미널 명령어가 섞여 들어감)로 반복 연결 시도 → Supabase가 해당 IP 일시 차단 (`ECIRCUITBREAKER: too many authentication failures`)  
+**원인:** 여러 명령어를 한 번에 붙여넣을 때 `cd /Users/...` 가 비밀번호 안에 섞임  
+**해결:** 5~10분 대기 후 자동 해제. 이후 올바른 풀러 URL + 비밀번호로 재설정.  
+**방지책:** flyctl secrets set 명령어는 반드시 한 줄씩 실행.
