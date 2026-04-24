@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, Request, HTTPException
-from parser import parse_message, detect_multi_block
+from parser import parse_message_with_fallback, detect_multi_block
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,7 +41,7 @@ async def receive_webhook(request: Request):
         logger.info("멀티 블록 안내 메시지 예정: %s", MULTI_BLOCK_NOTICE)
         # 첫 번째 블록만 파싱 진행 (아래 로직에서 자연스럽게 처리됨)
 
-    result = parse_message(message_text, member_name=member_name)
+    result = await parse_message_with_fallback(message_text, member_name=member_name)
 
     if result is None:
         return {"status": "not_a_report"}

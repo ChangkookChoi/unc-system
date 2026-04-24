@@ -1,6 +1,13 @@
 import re
+import os
+import json
+import logging
 from datetime import date
 from models import TaskItem, ParseResult
+
+logger = logging.getLogger(__name__)
+
+CONFIDENCE_THRESHOLD = 0.5  # 이 미만이면 Claude API 폴백
 
 # ── 멤버 닉네임 정규화 ───────────────────────────────────────────
 MEMBER_NAME_MAP: dict[str, str] = {
@@ -204,6 +211,113 @@ def parse_message(
         tasks=tasks,
         confidence=confidence,
         used_claude=False,
+    )
+
+
+async def _parse_with_claude(
+    tasks: list[TaskItem], raw_text: str
+) -> list[TaskItem] | None:
+    """
+    규칙 기반 신뢰도가 낮을 때 Claude API로 완료 여부를 재판정한다.
+    태스크명은 기존 파싱 결과를 유지하고, is_done 값만 교체한다.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        logger.error("anthropic 패키지 없음. pip install anthropic")
+        return None
+
+    task_lines = "\n".join(f"- {t.raw_name}" for t in tasks)
+    prompt = f"""아래는 업무 보고 메시지의 태스크 목록이다. 각 항목이 완료됐는지 판단해줘.
+
+판단 기준:
+- 명시적 미완료 표기(X, x, (x), (미완료), 세모, ing, 진행중)가 있으면 미완료
+- 표기가 없어도 업무보고 문맥이면 완료로 판단
+- URL, 날짜 헤더, 코멘트성 문장은 제외
+
+태스크 목록:
+{task_lines}
+
+응답은 아래 JSON만 (설명 없이):
+{{"results": [{{"name": "태스크명", "is_done": true}}, ...]}}"""
+
+    try:
+        client = anthropic.AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.content[0].text.strip()
+        logger.info(
+            "Claude API 호출 — 입력 %d토큰 / 출력 %d토큰",
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+        )
+
+        # JSON 파싱 (코드블록 래핑 방어)
+        content = re.sub(r'^```(?:json)?\s*|\s*```$', '', content, flags=re.MULTILINE)
+        data = json.loads(content)
+
+        # 이름 기준으로 is_done 값 매핑
+        claude_map: dict[str, bool] = {
+            r['name'].strip(): r['is_done']
+            for r in data.get('results', [])
+        }
+
+        updated = []
+        for task in tasks:
+            is_done = claude_map.get(task.raw_name, task.is_done)
+            updated.append(TaskItem(
+                raw_name=task.raw_name,
+                clean_name=task.clean_name,
+                is_done=is_done,
+                raw_status=task.raw_status,
+            ))
+        return updated
+
+    except Exception as e:
+        logger.error("Claude API 폴백 실패: %s", e)
+        return None
+
+
+async def parse_message_with_fallback(
+    text: str,
+    member_name: str | None = None,
+    year: int | None = None,
+) -> ParseResult | None:
+    """
+    parse_message() 실행 후 신뢰도가 낮으면 Claude API로 보완한다.
+    Webhook 경로에서 사용하는 메인 진입점.
+    """
+    result = parse_message(text, member_name=member_name, year=year)
+    if result is None:
+        return None
+
+    # 업무계획은 폴백 불필요
+    if result.report_type == 'plan':
+        return result
+
+    # 신뢰도 충분하면 그대로 반환
+    if result.confidence >= CONFIDENCE_THRESHOLD:
+        return result
+
+    logger.info(
+        "신뢰도 낮음(%.0f%%) — Claude 폴백 호출: %s %s",
+        result.confidence * 100, result.report_date, result.member_name,
+    )
+    updated_tasks = await _parse_with_claude(result.tasks, text)
+    if updated_tasks is None:
+        return result  # 폴백 실패 시 규칙 기반 결과 반환
+
+    done = sum(1 for t in updated_tasks if t.is_done)
+    return ParseResult(
+        member_name=result.member_name,
+        report_date=result.report_date,
+        report_type=result.report_type,
+        tasks=updated_tasks,
+        confidence=result.confidence,
+        used_claude=True,
     )
 
 
